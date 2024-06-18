@@ -1,0 +1,53 @@
+{
+  "id": "phoenix-modules-wild-mage",
+  "title": "Phoenix Modules - Wild Mage",
+  "description": "Add Wild Magic Surge from ADND-Tome of Magic into DND5e",
+  "authors": [
+    {
+      "name": "Brandin canterbury",
+      "email": "brandincanterbury@gmail.com"
+    }
+  ],
+  "systems": [
+    {
+      "id": "dnd5e",
+      "type": "system",
+      "compatibility": {
+        "minimum": "3.0.0"
+      }
+    }
+  ],
+  "packs": [
+    {
+      "name": "wild-magic-features",
+      "label": "Wild Magic Features",
+      "type": "Item",
+      "system": "dnd5e",
+      "banner" : "modules/phoenix-modules-wild-mage/images/Module Banner.png"
+    }
+  ],
+  "packFolders": [{
+    "name": "Phoenix Modules",
+    "sorting": "a",
+    "color": "#000000",
+    "packs": ["wild-magic-features"]
+  }],
+  "esmodules": ["scripts/module.js"],
+  "version": "#{VERSION}#",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12"
+  },
+  "url": "#{URL}#",
+  "manifest": "#{MANIFEST}#",
+  "download": "#{DOWNLOAD}#",
+  "license": "LICENSE",
+  "readme": "README.md",
+  "media": [
+    {
+      "type": "setup",
+      "url": "https://i.imgur.com/Gl0Smdd.png",
+      "thumbnail": ""
+    }
+  ]
+}
