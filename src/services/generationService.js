@@ -1,0 +1,4 @@
+﻿export async function generateCompendiumItems() {
+    
+    
+}

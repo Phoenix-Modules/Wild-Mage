@@ -12,6 +12,6 @@
     "vite": "^5.2.13"
   },
   "dependencies": {
-    "@phoenix-modules/common-library": "0.2.0"
+    "@phoenix-modules/common-library": "0.3.2"
   }
 }
