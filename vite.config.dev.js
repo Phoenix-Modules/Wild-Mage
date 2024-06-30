@@ -6,6 +6,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
     build: {
         sourcemap: true,
+        emptyOutDir: false,
         rollupOptions: {
             plugins: [nodeResolve({ exportConditions: ['node'] }), commonjs()],
             input: {
@@ -23,7 +24,6 @@ export default defineConfig({
             targets: [
                 { src: "src/module.json", dest: "dist" },
                 { src: "src/templates", dest: "dist" },
-                { src: "src/packs", dest: "dist" },
                 { src: "src/styles", dest: "dist" },
                 { src: "src/images", dest: "dist" },
             ],

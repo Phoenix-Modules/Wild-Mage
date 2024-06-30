@@ -104,26 +104,25 @@ export const WildEffectFunctions = {
             Hooks.off("midi-qol.preAttackRoll", preAttackRollHook);
         }, duration * 1000); // Convert to milliseconds
     },
-    skunkSmell: (actor, spellCast, target) => {
-        // Create an Active Effect for causing disadvantage on social interactions
+    skunkSmell: (actor, spellCast, target) => {        
         const effectData = {
             label: "Smells like a skunk",
-            icon: "icons/svg/skull.svg", // Use an appropriate icon
+            icon: "icons/svg/skull.svg",
             changes: [
                 {
-                    key: "flags.midi-qol.disadvantage.skill.prc", // Assuming "prc" is the perception skill, change to the appropriate skill if needed
+                    key: "flags.midi-qol.disadvantage.skill.prc",
                     mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM,
                     value: 1
                 },
                 {
-                    key: "flags.midi-qol.disadvantage.skill.int", // Assuming "int" is the interaction skill, change to the appropriate skill if needed
+                    key: "flags.midi-qol.disadvantage.skill.int",
                     mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM,
                     value: 1
                 }
             ],
             origin: actor.uuid,
             duration: {
-                seconds: 600, // Adjust duration as needed
+                seconds: 600,
             }
         };
 

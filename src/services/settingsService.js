@@ -1,75 +1,49 @@
-import {moduleData} from "../constants/moduleData";
-import Settings from "../constants/settings";
-import Features from "../constants/features";
+import { moduleName} from "../constants/moduleData";
+import settings from "../constants/settings";
 
 export async function registerSettings() {
-    game.settings.register(moduleData.moduleName, Settings.FlightHeightKey, {
-        name: 'Max Flight Height',
-        hint: 'The maximum height (in feet) that a character can fly.',
-        scope: 'world', 
-        config: true, 
-        type: Number, 
-        default: 100, 
-        restricted: true, 
-        onChange: value => {
-            console.log(`Max flight height set to ${value}`);
-        }
-    });
-
-    game.settings.register(moduleData.moduleName, Settings.IncrementKey, {
-        name: 'Raise/Lower Increment',
-        hint: `The increment (in feet) that a character moves when using the ${Features.RaiseLabel}/${Features.LowerLabel} feature.`,
-        scope: 'world',
-        config: true,
-        type: Number,
-        default: 5,
-        restricted: true,
-        onChange: value => {
-            console.log(`Height increment set to ${value}`);
-        }
-    });
-
-    game.settings.register(moduleData.moduleName, Settings.AcAdjustmentKey, {
-        name: 'Adjust AC when flying',
-        hint: 'How much AC (positive or negative) to adjust when in flying state',
-        scope: 'world',
-        config: true,
-        type: Number,
-        default: -5,
-        restricted: true,
-        onChange: value => {
-            console.log(`AC adjustment set to ${value}`);
-        }
-    });
-
-    game.settings.register(moduleData.moduleName, Settings.TokenScaleKey, {
-        name: 'Scale Token with Height',
-        hint: 'Scale the token bigger or smaller depending on height',
-        scope: 'world',
+    // Register a custom button setting
+    // game.settings.registerMenu(moduleName, settings.showHelp, {
+    //     name: "Show Help",
+    //     label: "Show Help",
+    //     hint: "Click to view the help documentation.",
+    //     icon: "fas fa-question-circle",
+    //     type: HelpDialog,
+    //     restricted: false
+    // });
+    
+    game.settings.register(moduleName, settings.scaleThreshold, {
+        name: "Scale Threshold on surge fail",
+        hint: "If enabled, the likelihood of wild magic surges will be scaled.",
+        scope: "world",
         config: true,
         type: Boolean,
-        default: true,
         restricted: true,
         onChange: value => {
-            console.log(`AC adjustment set to ${value}`);
-        }
+            console.log(`Wild Magic Threshold Scaling set to: ${value}`);
+        },
+        default: false
+    });
+
+    // Register a numeric setting
+    game.settings.register(moduleName, settings.baseThreshold, {
+        name: "Base Wild Magic Threshold",
+        hint: "Set the base threshold for wild magic surges. (default: 1)",
+        scope: "world",
+        config: true,
+        type: Number,
+        restricted: true,
+        onChange: value => {
+            console.log(`Base threshold set to: ${value}`);
+        },
+        default: 1
     });
 }
 
-
-export function getMaxFlightHeightValue() {
-    return game.settings.get(moduleData.moduleName, Settings.FlightHeightKey);
+export function getThresholdScale() {
+    return game.settings.get(moduleName, settings.scaleThreshold);
 }
 
-
-export function getIncrementValue() {
-    return game.settings.get(moduleData.moduleName, Settings.IncrementKey);
-}
-
-export function getAcAdjustmentValue() {
-    return game.settings.get(moduleData.moduleName, Settings.AcAdjustmentKey);
-}
-
-export function getTokenScaleValue() {
-    return game.settings.get(moduleData.moduleName, Settings.TokenScaleKey);
+export function getBaseThreshold() {
+    return game.settings.get(moduleName, settings.baseThreshold);
 }

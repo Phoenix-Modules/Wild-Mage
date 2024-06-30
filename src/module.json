@@ -19,9 +19,23 @@
   ],
   "packs": [
     {
-      "name": "wild-magic-features",
-      "label": "Wild Magic Features",
+      "name": "pm-classes",
+      "label": "Classes",
       "type": "Item",
+      "system": "dnd5e",
+      "banner" : "modules/phoenix-modules-wild-mage/images/Module Banner.png"
+    },
+    {
+      "name": "pm-class-features",
+      "label": "Class Features",
+      "type": "Item",
+      "system": "dnd5e",
+      "banner" : "modules/phoenix-modules-wild-mage/images/Module Banner.png"
+    },
+    {
+      "name": "pm-rolltables",
+      "label": "RollTables",
+      "type": "RollTable",
       "system": "dnd5e",
       "banner" : "modules/phoenix-modules-wild-mage/images/Module Banner.png"
     }
@@ -30,9 +44,9 @@
     "name": "Phoenix Modules",
     "sorting": "a",
     "color": "#000000",
-    "packs": ["wild-magic-features"]
+    "packs": ["pm-classes","pm-class-features", "pm-rolltables"]
   }],
-  "esmodules": ["scripts/module.js"],
+  "esmodules": ["scripts/pm-wildmage.js"],
   "version": "#{VERSION}#",
   "compatibility": {
     "minimum": "11",

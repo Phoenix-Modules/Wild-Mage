@@ -1,15 +1,14 @@
 import {registerSettings} from "./services/settingsService";
-import {generateCompendiumItems} from "./services/generationService";
+import {checkBendLuck, processWildMagic} from "./services/wildMagicService";
+
 Hooks.once("init", async () => {
     await registerSettings();
     console.log("Phoenix Modules - Wild Mage is installed!");
 });
 
-
-Hooks.once('ready', async () => {
-    await generateCompendiumItems();
+Hooks.on("preCreateChatMessage", async (chatMessage, messageText, chatData) => {
 });
 
-
-Hooks.on("preCreateChatMessage", (chatMessage, messageText, chatData) => {
+Hooks.on("createChatMessage", async (chatMessage, messageText, chatData) => {
+    await processWildMagic(chatMessage, messageText, chatData);
 });

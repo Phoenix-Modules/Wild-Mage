@@ -1,9 +1,7 @@
 export const Settings = {
-    FlightHeightKey: "maxFlightHeight",
-    IncrementKey: "heightIncrement",
-    AcAdjustmentKey: "acAdjustment",
-    ActionCostKey: "costsAction",
-    TokenScaleKey: "scaleToken"
+    scaleThreshold: "scaleThreshold",
+    baseThreshold: "baseThreshold",
+    showHelp: "showHelp",
 }
 
 export default Settings;

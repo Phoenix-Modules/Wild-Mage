@@ -14,7 +14,7 @@ Hooks.on("preUpdateActor", async (actor, data, options, userId) => {
     // Roll for a wild magic surge when a spell is cast
     if (spellLevel > 0) {
         const roll = new Roll("1d20").roll();
-        if (roll.total <= wildMagicThreshold>) {
+        if (roll.total <= wildMagicThreshold) {
             // Roll on the wild magic table
             const surgeRoll = new Roll("1d100").roll();
             const surgeIndex = surgeRoll.total - 1; // Adjusting for zero-based index
