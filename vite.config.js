@@ -5,15 +5,16 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
     build: {
-        sourcemap: true,
+        minify: true,
         rollupOptions: {
+            treeshake: false,
             plugins: [nodeResolve({ exportConditions: ['node'] }), commonjs()],
             input: {
                 module: "src/module.js",
             },
             output: {
                 entryFileNames: "scripts/pm-wildmage.js",
-                format: "cjs",
+                format: "es",
                 dir: "dist",
             },
         },
@@ -25,7 +26,7 @@ export default defineConfig({
                 { src: "src/templates", dest: "dist" },
                 { src: "src/packs", dest: "dist" },
                 { src: "src/styles", dest: "dist" },
-                { src: "src/images", dest: "dist" },
+                { src: "src/assets", dest: "dist" },
             ],
             hook: "writeBundle",
         })

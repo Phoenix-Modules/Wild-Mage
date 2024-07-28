@@ -1,58 +1,81 @@
-﻿import WildGem from './gem.js'
+﻿import WildGem from './wildGem'
+import {SOUNDS} from "../constants/moduleData";
+import {CompendiumService, PhxConst, UtilityService, TokenService, EffectService} from "@phoenix-modules/common-library";
+import {
+    animateItchyClothes,
+    animateSkunkSmell,
+    animateSnakeSpawn,
+    animateWallOfForce
+} from "../services/animationService";
+
+
 export const WildEffectFunctions = {
-    wallOfForce: async (actor, spellCast, target) => {
-        // Get the caster's token
-        const casterToken = canvas.tokens.get(actor.token.id);
-
-        // Determine the location to cast "Wall of Force" based on caster's rotation
-        const rotation = casterToken.data.rotation;
-        const distance = 5 * canvas.grid.size; // Adjust distance as needed
-        const radians = rotation * (Math.PI / 180);
-        const x = casterToken.x + Math.cos(radians) * distance;
-        const y = casterToken.y + Math.sin(radians) * distance;
-
-        // Play the Wall of Force animation using sequencer and jb2a
-        new Sequence()
-            .effect()
-            .file("jb2a.wall_of_force.01.blue") // Path to the JB2A Wall of Force animation
-            .atLocation({ x, y })
-            .rotate(rotation)
-            .persist()
-            .fadeIn(500)
-            .fadeOut(500)
-            .name("wall-of-force-animation") // Name the animation for later removal
-            .play();
-
-        ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({ actor }),
-            content: "Wild Magic Surge: Wall of force appears in front of caster."
-        });
+    wallOfForce: async (actor, actorToken, spellCast, target) => {
+        
+        const secondsDuration = 60; // Duration in  milliseconds (1 minute)
+        
+        //Get the max distance (In pixels) based on map settings
+        const maxDistance = 120 * canvas.grid.size / canvas.grid.distance;
+        
+        //Half the distance to determine center point of wall
+        const halfDistance = maxDistance / 2;
+        
+        //Center the starting coordinates on the actor (Not the top left corner of the actor image)
+        const centerX = actorToken.x + (canvas.grid.size / 2);
+        const centerY = actorToken.y + (canvas.grid.size / 2);
+        
+        // Determine the offset of the current rotation of the actor token (gets one square in front of the token)
+        const rotationDeg = actorToken.rotation;
+        
+        //Due to standard 5e token images pointing down, and 0deg not being down, we make an adjustment here
+        //Adding 90 makes the image -> target look correct
+        const actorRadians = (rotationDeg + 90) * (Math.PI / 180);
+        //Get the offset of 5ft (or grid distance) in front of actor
+        const actorOffsetX = Math.cos(actorRadians) * canvas.grid.size;
+        const actorOffsetY = Math.sin(actorRadians) * canvas.grid.size;
+        
+        //Based upon standard rotation, not the adjusted actor rotation
+        const standardRadians = rotationDeg * (Math.PI / 180);
+        
+        //Basically moving the wall to the center
+        const wallOffsetX = halfDistance * Math.cos(standardRadians);
+        const wallOffsetY = halfDistance * Math.sin(standardRadians);
+        
+        //take the center of the grid the actor is in, offset it by 5 feet, then center the wall on it.
+        const initialX = (centerX + actorOffsetX) - wallOffsetX;
+        const initialY = (centerY + actorOffsetY) - wallOffsetY;
 
         // Create a measured template to represent the wall of force area
         const templateData = {
             t: "ray",
             user: game.user.id,
-            x: x,
-            y: y,
-            direction: rotation,
-            distance: distance,
+            hidden: true,
+            x: initialX,
+            y: initialY,
+            direction: rotationDeg,
+            distance: 120,
             width: 1,
             borderColor: "#00BFFF",
             fillColor: "#00BFFF"
         };
 
-        const template = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
+        const [template] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
+        
+        console.log(template);
+
+        // Play the Wall of Force animation using sequencer and jb2a in each square the wall occupies
+        animateWallOfForce(maxDistance, standardRadians, rotationDeg + 90, secondsDuration);        
 
         // Function to prevent attacks and movement through the wall
-        const preventThroughWall = (token, update) => {
-            if (!template) return;
+        const preventThroughWall = (token, tokenData) => {
+            if (!template) return false;
 
             const startPoint = { x: token.x, y: token.y };
-            const endPoint = { x: token.x + (update.x || 0), y: token.y + (update.y || 0) };
-            const wallStart = { x: template[0].x, y: template[0].y };
+            const endPoint = { x: (tokenData.x !== undefined) ? tokenData.x : token.x, y: (tokenData.y !== undefined) ? tokenData.y : token.y };
+            const wallStart = { x: template.x, y: template.y };
             const wallEnd = {
-                x: template[0].x + Math.cos(template[0].direction * (Math.PI / 180)) * template[0].distance,
-                y: template[0].y + Math.sin(template[0].direction * (Math.PI / 180)) * template[0].distance
+                x: template.x + Math.cos(template.direction * (Math.PI / 180)) * maxDistance,
+                y: template.y + Math.sin(template.direction * (Math.PI / 180)) * maxDistance
             };
 
             // Check if the token's movement or attack path intersects the wall of force
@@ -60,6 +83,7 @@ export const WildEffectFunctions = {
                 ui.notifications.warn("You cannot move or attack through the Wall of Force!");
                 return false; // Prevent the movement or attack
             }
+            return true;
         };
 
         // Helper function to check if two line segments intersect
@@ -75,16 +99,14 @@ export const WildEffectFunctions = {
             const o3 = orientation(p2, q2, p1);
             const o4 = orientation(p2, q2, q1);
 
-            if (o1 !== o2 && o3 !== o4) return true;
-
-            return false;
+            return o1 !== o2 && o3 !== o4;
         };
 
         // Set up hooks to monitor token updates and attacks, and prevent movement and attacks through the wall
         const preUpdateTokenHook = Hooks.on("preUpdateToken", (scene, tokenData, updateData, options, userId) => {
             const token = canvas.tokens.get(tokenData._id);
-            if (updateData.x !== undefined || updateData.y !== undefined) {
-                return preventThroughWall(token, updateData);
+            if (tokenData.x !== undefined || tokenData.y !== undefined) {
+                return preventThroughWall(token, tokenData);
             }
         });
 
@@ -96,18 +118,26 @@ export const WildEffectFunctions = {
             }
         });
 
-        // Remove the animation and hooks when the effect ends
-        const duration = 10 * CONFIG.time.roundTime; // Duration in seconds (10 rounds)
-        setTimeout(() => {
-            Sequencer.EffectManager.endEffects({ name: "wall-of-force-animation" });
+        // Remove the animation, hooks and template when the effect ends
+        
+        setTimeout(async () => {
+            for (let i = 0; i <= maxDistance; i += stepDistance) {
+                Sequencer.EffectManager.endEffects({ name: `wall-of-force-animation-${i / stepDistance}` });
+            }
             Hooks.off("preUpdateToken", preUpdateTokenHook);
             Hooks.off("midi-qol.preAttackRoll", preAttackRollHook);
-        }, duration * 1000); // Convert to milliseconds
+
+
+            // Remove the template
+            await canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", [template.id]);
+            
+        }, secondsDuration * 1000); // Convert to milliseconds
     },
-    skunkSmell: (actor, spellCast, target) => {        
+    skunkSmell: async (actor, actorToken, spellCast, target) => {     
+        const duration = 600;
         const effectData = {
             label: "Smells like a skunk",
-            icon: "icons/svg/skull.svg",
+            icon: "icons/magic/acid/orb-bubble-smoke-drip.webp",
             changes: [
                 {
                     key: "flags.midi-qol.disadvantage.skill.prc",
@@ -122,108 +152,100 @@ export const WildEffectFunctions = {
             ],
             origin: actor.uuid,
             duration: {
-                seconds: 600,
+                seconds: duration,
             }
         };
-
-        actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
-
-        ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({actor}),
-            content: "Wild Magic Surge: Caster smells like a skunk, causing disadvantage on social interactions."
-        });
+        
+        animateSkunkSmell(actorToken, duration);
+        await EffectService.AddEffect(actor, effectData);
     },
-    nonPoisonousSnakes: (actor, spellCast, target) => {
-        // Get the caster's token
-        const casterToken = canvas.tokens.get(actor.token.id);
-
+    nonPoisonousSnakes: async (actor, actorToken, spellCast, target) => {
+        if(!TokenService.IsTokenDocument(actorToken)) return;
+        
         // Define the distance and number of tokens to place
-        const distance = 5; // Adjust distance as needed
+        const squaresFromCaster = 3; // distance in pixels
         const numSnakes = 8;
+        const snakeItemName = "Poisonous Snake";
+        
 
         // Find the "Poisonous Snake" actor from the compendium or existing actors
-        const snakeActor = game.actors.getName("Poisonous Snake");
+        const snakeActorList = await CompendiumService.FindInCompendiums(snakeItemName, PhxConst.COMP_TYPES.Actor);        
 
-        if (!snakeActor) {
+        if (snakeActorList.length === 0) {
             ui.notifications.warn("Poisonous Snake actor not found.");
             return;
         }
+        
+        const snakeActor  = snakeActorList[0];
+
+        //Get the center pixel of the actor based upon grid size, returns { x, y }, 
+        const actorCenter = UtilityService.getTokenCenter(actorToken);
 
         // Calculate positions around the caster
-        const positions = [];
-        for (let i = 0; i < numSnakes; i++) {
-            const angle = (i * (360 / numSnakes)) * (Math.PI / 180);
-            const x = casterToken.x + Math.cos(angle) * distance;
-            const y = casterToken.y + Math.sin(angle) * distance;
-            positions.push({x, y});
+        const radius = squaresFromCaster * canvas.grid.size;
+        const positions = UtilityService.calculatePointsOnCircleFromCenter(radius, numSnakes, actorCenter);
+        
+        const updateData = {
+            token: {
+                name: `Non Poisonous Snake`,
+                disposition: 0,
+                alpha: 0,
+            }
         }
-
-        // Create snake tokens at the calculated positions
-        const snakeTokens = positions.map(pos => ({
-            name: "Poisonous Snake",
-            actorId: snakeActor.id,
-            x: pos.x,
-            y: pos.y,
-            img: snakeActor.data.token.img,
-            width: snakeActor.data.token.width,
-            height: snakeActor.data.token.height
-        }));
-
-        canvas.scene.createEmbeddedDocuments("Token", snakeTokens);
-
-        ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({actor}),
-            content: "Wild Magic Surge: Caster shoots forth eight non-poisonous snakes from fingertips."
-        });
+        
+        for (let i = 0; i < positions.length; i++) {
+            const pos = positions[i];
+            const location = { x: pos.x, y: pos.y, elevation: actorToken.elevation };
+            
+            let portal = new Portal().setLocation(location);
+            portal.addCreature(snakeActor, { updateData: updateData, count: 1 });
+            const token = await portal.spawn();
+            animateSnakeSpawn(actorToken, token[0]);
+            portal = undefined;
+        }
     },
-    itchyClothesCaster: (actor, spellCast, target) => {
-        // Roll 1d6 to determine the duration
-        const durationRoll = new Roll("1d6").roll();
-        durationRoll.toMessage();
-
-        // Create an Active Effect for -2 initiative
+    itchyClothesCaster: async (actor, actorToken, spellCast, target) => {
+        const duration = 86400
         const effectData = {
             label: "Itching (-2 Initiative)",
-            icon: "icons/svg/daze.svg", // Use an appropriate icon
+            icon: "icons/magic/control/silhouette-aura-energy.webp",
             changes: [
                 {
-                    key: "data.attributes.init.total",
+                    key: "system.attributes.init.bonus",
                     mode: CONST.ACTIVE_EFFECT_MODES.ADD,
                     value: -2
                 }
             ],
             origin: actor.uuid,
             duration: {
-                rounds: durationRoll.total,
+                seconds: duration,
             }
         };
-
-        actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
-
-        ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({actor}),
-            content: `Wild Magic Surge: Caster's clothes itch, causing -2 initiative for ${durationRoll.total} turns.`
-        });
+        animateItchyClothes(actorToken, duration);
+        await EffectService.AddEffect(actor, effectData);
     },
-    lightOnCaster: (actor, spellCast, target) => {
-        // Cast the "Light" cantrip on the caster.
-        const lightSpell = game.items.getName("Light");
-        if (!lightSpell) {
-            ui.notifications.warn("Light cantrip not found.");
-            return;
+    lightOnCaster: async (actor, actorToken, spellCast, target) => {
+        const durationMs = 3.6e+6;
+        
+        const lightData = {
+            alpha: 0.2,
+            angle: 360,
+            animation: {
+                intensity: 3,
+                reverse: false,
+                speed: 2,
+                type: "torch"
+            },
+            bright: 20,
+            dim: 40            
         }
-
-        const lightSpellClone = lightSpell.clone();
-        lightSpellClone.data.data.level = 0;
-
-        actor.createEmbeddedDocuments("Item", [lightSpellClone]);
-
-        ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({actor}),
-            content: "Wild Magic Surge: Caster glows as per the Light spell."
-        });
+        
+        await actorToken.update({ light: lightData });
+        
+        setTimeout(() => {}, durationMs)
+        
     },
-    centerOnCasterSixty: (actor, spellCast, target) => {
+    centerOnCasterSixty: async (actor, actorToken, spellCast, target) => {
         // Modify the original spell to target the caster, if applicable
         // If it has a radius, set it to 60' centered on caster
         const casterToken = canvas.tokens.get(actor.token.id);
@@ -256,7 +278,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Spell effect has a 60' radius centered on the caster, or targets the caster if it had a different target."
         });
     },
-    nextPhraseTrue: (actor, spellCast, target) => {
+    nextPhraseTrue: async (actor, actorToken, spellCast, target) => {
         // Create an Active Effect for the next phrase spoken by the caster becoming true
         const effectData = {
             label: "Next Phrase Becomes True",
@@ -280,7 +302,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: The next phrase spoken by the caster becomes true, lasting for 1 turn."
         });
     },
-    casterHairLength: (actor, spellCast, target) => {
+    casterHairLength: async (actor, actorToken, spellCast, target) => {
         // Add an Active Effect to represent hair growth
         const effectData = {
             label: "Hair Growth",
@@ -311,7 +333,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster's hair grows one foot in length."
         });
     },
-    casterPivot180: (actor, spellCast, target) => {
+    casterPivot180: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -326,7 +348,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster pivots 180 degrees immediately."
         });
     },
-    blackenedFace: async (actor, spellCast, target) => {
+    blackenedFace: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -363,7 +385,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster's face is blackened by a small explosion."
         });    
     },
-    allergicToItems: (actor, spellCast, target) => {
+    allergicToItems: async (actor, actorToken, spellCast, target) => {
         // Roll 1d6 to determine the duration
         const durationRoll = new Roll("1d6").roll();
         durationRoll.toMessage();
@@ -412,7 +434,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: Caster develops an allergy to his items for ${durationRoll.total} turns. During this time, the caster cannot perform any actions, bonus actions, or reactions if he has any items equipped. All attacks against him have advantage, and his AC is considered flat.`
         });
     },
-    enlargedHead: (actor, spellCast, target) => {
+    enlargedHead: async (actor, actorToken, spellCast, target) => {
         // Roll 1d4 to determine the duration
         const durationRoll = new Roll("1d4").roll();
         durationRoll.toMessage();
@@ -440,7 +462,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: Caster's head enlarges for ${durationRoll.total} turns.`
         });
     },
-    reduceCasterSize: (actor, spellCast, target) => {
+    reduceCasterSize: async (actor, actorToken, spellCast, target) => {
         // Find the "Enlarge/Reduce" spell from the available spells
         const enlargeReduceSpell = game.items.getName("Enlarge/Reduce");
         if (!enlargeReduceSpell) {
@@ -491,7 +513,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster is affected by Enlarge/Reduce spell with the Reduce effect."
         });
     },
-    casterLoveTarget: (actor, spellCast, target) => {
+    casterLoveTarget: async (actor, actorToken, spellCast, target) => {
         const currentTime = game.time.worldTime;
         const durationInSeconds = 3600; // Duration set to 1 hour in seconds (effectively permanent until a remove curse is cast)
         const endTime = currentTime + durationInSeconds;
@@ -532,7 +554,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: Caster falls madly in love with ${target.name} until a remove curse is cast.`
         });
     },
-    cannotCancel: (actor, spellCast, target) => {
+    cannotCancel: async (actor, actorToken, spellCast, target) => {
         // Check if the original spell can be canceled at will by the caster
         const cancelableSpells = ["Concentration"]; // Add other cancelable spell types or names if needed
 
@@ -569,7 +591,7 @@ export const WildEffectFunctions = {
             });
         }
     },
-    casterRandomPolymorph: async (actor, spellCast, target) => {
+    casterRandomPolymorph: async (actor, actorToken, spellCast, target) => {
         // Get a list of actors from the side panel and compendiums
         const sidebarActors = game.actors.contents;
         const compendiumActors = [];
@@ -646,7 +668,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: Caster polymorphs into ${randomActor.name} for 10 rounds.`
         });
     },
-    bubblesNoWords: (actor, spellCast, target) => {
+    bubblesNoWords: async (actor, actorToken, spellCast, target) => {
         // Create an Active Effect to represent bubbles coming out of the caster's mouth
         const effectData = {
             label: "Bubbles Instead of Words",
@@ -676,7 +698,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Colorful bubbles come out of the caster's mouth instead of words for 10 rounds."
         });
     },
-    reversedTongues: async (actor, spellCast, target) => {
+    reversedTongues: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -722,7 +744,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: All known languages are removed from the caster and all creatures within 60 feet for 10 rounds."
         });
     },
-    wallOfFire: async (actor, spellCast, target) => {
+    wallOfFire: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -782,7 +804,7 @@ export const WildEffectFunctions = {
             Sequencer.EffectManager.endEffects({ name: "wall-of-fire-animation" });
         }, duration * 1000); // Convert to milliseconds
     },
-    enlargeFeet: async (actor, spellCast, target) => {
+    enlargeFeet: async (actor, actorToken, spellCast, target) => {
         // Create an Active Effect to represent the enlarged feet
         const effectData = {
             label: "Enlarged Feet",
@@ -821,7 +843,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster's feet enlarge, reducing movement to half normal and adding -4 to initiative rolls until a remove curse spell is cast."
         });
     },
-    duplicateSpellOnCaster: async (actor, spellCast, target) => {
+    duplicateSpellOnCaster: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -852,7 +874,7 @@ export const WildEffectFunctions = {
             const workflow = await MidiQOL.completeItemUse(newSpell, {}, { target: [casterToken] });
         }
     },
-    levitateCaster: async (actor, spellCast, target) => {
+    levitateCaster: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);        
 
@@ -876,7 +898,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster is affected by the Levitate spell."
         });
     },
-    fearOnCaster: async (actor, spellCast, target) => {
+    fearOnCaster: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);        
 
@@ -909,7 +931,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster casts Fear, centered on themselves with a 60 feet radius, ignoring the caster."
         });
     },
-    squeakyVoice: async (actor, spellCast, target) => {
+    squeakyVoice: async (actor, actorToken, spellCast, target) => {
         // Roll 1d6 to determine the duration in days
         const durationRoll = new Roll("1d6").roll();
         durationRoll.toMessage();
@@ -937,7 +959,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: Caster speaks in a squeaky voice for ${durationRoll.total} days.`
         });
     },
-    xRayVision: async (actor, spellCast, target) => {
+    xRayVision: async (actor, actorToken, spellCast, target) => {
         // Roll 1d6 to determine the duration in rounds
         const durationRoll = new Roll("1d6").roll();
         durationRoll.toMessage();
@@ -971,7 +993,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: Caster gains X-ray vision for ${durationRoll.total} rounds.`
         });
     },
-    ageTenYears: async (actor, spellCast, target) => {
+    ageTenYears: async (actor, actorToken, spellCast, target) => {
         // Create an Active Effect to represent aging 10 years
         const effectData = {
             label: "Aged 10 Years",
@@ -1001,7 +1023,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster ages 10 years."
         });
     },
-    silenceOnCaster: async (actor, spellCast, target) => {
+    silenceOnCaster: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
         
@@ -1048,7 +1070,7 @@ export const WildEffectFunctions = {
             await token.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
         }
     },
-    pitCaster: async (actor, spellCast, target) => {
+    pitCaster: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1114,7 +1136,7 @@ export const WildEffectFunctions = {
             Hooks.off("preUpdateToken", preUpdateTokenHook);
         }, duration * 1000); // Convert to milliseconds
     },
-    reverseGravity: async (actor, spellCast, target) => {
+    reverseGravity: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
         
@@ -1159,7 +1181,7 @@ export const WildEffectFunctions = {
 
         reverseGravityEffect();
     },
-    streamers: async (actor, spellCast, target) => {
+    streamers: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1208,7 +1230,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Colored streamers pour from the caster's fingertips."
         });
     },
-    reboundSpell: async (actor, spellCast, target) => {
+    reboundSpell: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1240,7 +1262,7 @@ export const WildEffectFunctions = {
             const workflow = await MidiQOL.completeItemUse(newSpell, {}, { target: [casterToken] });
         }
     },
-    casterInvisible: async (actor, spellCast, target) => {
+    casterInvisible: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);        
 
@@ -1297,7 +1319,7 @@ export const WildEffectFunctions = {
         // Optionally, make the caster's token transparent to indicate invisibility
         await casterToken.update({ alpha: 0.5 });
     },
-    colorSpray: async (actor, spellCast, target) => {
+    colorSpray: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1349,7 +1371,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Caster casts Color Spray in the direction they are facing."
         });
     },
-    butterflies: async (actor, spellCast, target) => {
+    butterflies: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1368,7 +1390,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: A stream of butterflies pours from the caster's mouth."
         });
     },
-    monsterFootprints: async (actor, spellCast, target) => {
+    monsterFootprints: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1429,7 +1451,7 @@ export const WildEffectFunctions = {
             Hooks.off("updateToken", createFootprintHook);
         }, duration * 1000); // Convert to milliseconds
     },
-    gemSpray: async (actor, spellCast, target) => {
+    gemSpray: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1468,7 +1490,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: ${numGems} gems shoot from the caster's fingertips.`
         });
     },
-    music: async (actor, spellCast, target) => {
+    music: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1490,7 +1512,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Music fills the air around the caster."
         });
     },
-    createFoodAndWater: async (actor, spellCast, target) => {
+    createFoodAndWater: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1521,7 +1543,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: The caster casts Create Food and Water."
         });
     },
-    extinguishLights: async (actor, spellCast, target) => {
+    extinguishLights: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1558,7 +1580,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Non-magical lights within 60 feet of the caster are extinguished."
         });
     },
-    deMagicItem: async (actor, spellCast, target) => {
+    deMagicItem: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1616,7 +1638,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: ${randomItem.name} within 30 feet of the caster is permanently non-magical.`
         });
     },
-    magicAnItem: async (actor, spellCast, target) => {
+    magicAnItem: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1695,7 +1717,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: ${randomItem.name} within 30 feet of the caster is permanently enchanted.`
         });
     },
-    invisibleAnItem: async (actor, spellCast, target) => {
+    invisibleAnItem: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1793,7 +1815,7 @@ export const WildEffectFunctions = {
             }
         }, duration * CONFIG.time.roundTime * 1000); // Convert to milliseconds
     },
-    smokeyEars: async (actor, spellCast, target) => {
+    smokeyEars: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1827,7 +1849,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: Smoke pours from the ears of all creatures within 60 feet of the caster."
         });
     },
-    dancingLights: async (actor, spellCast, target) => {
+    dancingLights: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1858,7 +1880,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: The caster casts Dancing Lights."
         });
     },
-    hiccup: async (actor, spellCast, target) => {
+    hiccup: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1921,7 +1943,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: All creatures within 30 feet of the caster begin to hiccup."
         });
     },
-    knock: async (actor, spellCast, target) => {
+    knock: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -1957,7 +1979,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: All doors within 60 feet of the caster open."
         });
     },
-    swapWithTarget: async (actor, spellCast, target) => {
+    swapWithTarget: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2000,7 +2022,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: The caster and target exchange places."
         });
     },
-    newRandomTarget: async (actor, spellCast, target) => {
+    newRandomTarget: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2033,7 +2055,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: The spell is redirected to ${newTarget.name}.`
         });
     },
-    preventSpell: async (actor, spellCast, target) => {
+    preventSpell: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2060,7 +2082,7 @@ export const WildEffectFunctions = {
             content: "Wild Magic Surge: The caster's spell fails, but it does not consume a spell slot."
         });
     },
-    elementalSummon: async (actor, spellCast, target) => {
+    elementalSummon: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2100,7 +2122,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: The caster also summons a ${randomElemental}.`
         });
     },
-    weatherChange: async (actor, spellCast, target) => {
+    weatherChange: async (actor, actorToken, spellCast, target) => {
         // Define possible weather conditions
         const weatherConditions = [
             "a sunny and clear sky",
@@ -2126,7 +2148,7 @@ export const WildEffectFunctions = {
             content: messageContent
         });
     },
-    bangStun: async (actor, spellCast, target) => {
+    bangStun: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2189,7 +2211,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: A deafening bang affects everyone within 60 feet. All are stunned for ${duration} rounds.`
         });
     },
-    voiceExchange: async (actor, spellCast, target) => {
+    voiceExchange: async (actor, actorToken, spellCast, target) => {
         // Ensure a target is selected
         if (!target) {
             ui.notifications.warn("No target selected.");
@@ -2260,7 +2282,7 @@ export const WildEffectFunctions = {
             content: `Wild Magic Surge: The caster and ${targetToken.name} exchange voices until a remove curse spell is cast.`
         });
     },
-    gateSummon: async (actor, spellCast, target) => {
+    gateSummon: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2354,7 +2376,7 @@ export const WildEffectFunctions = {
             });
         }
     },
-    shriek: async (actor, spellCast, target) => {
+    shriek: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2373,7 +2395,7 @@ export const WildEffectFunctions = {
         // Let the original spell cast normally
         // No need to modify the spellCast or prevent its effect
     },
-    reduceByHalf: async (actor, spellCast, target) => {
+    reduceByHalf: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2427,7 +2449,7 @@ export const WildEffectFunctions = {
         const options = { showFullCard: false, createMeasuredTemplate: false, configureDialog: false };
         await MidiQOL.completeItemUse(newSpell, {}, options);
     },
-    reverseAll: async (actor, spellCast, target) => {
+    reverseAll: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2484,7 +2506,7 @@ export const WildEffectFunctions = {
         const options = { showFullCard: false, createMeasuredTemplate: false, configureDialog: false };
         await MidiQOL.completeItemUse(newSpell, {}, options);
     },
-    spellToElemental: async (actor, spellCast, target) => {
+    spellToElemental: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token and the target's token
         const casterToken = canvas.tokens.get(actor.token.id);
         const targetToken = canvas.tokens.get(target.id);
@@ -2587,7 +2609,7 @@ export const WildEffectFunctions = {
             Hooks.off("midi-qol.postAttackRoll", handleElementalTurn);
         }, duration * CONFIG.time.roundTime * 1000); // Convert duration to milliseconds
     },
-    weaponGlow: async (actor, spellCast, target) => {
+    weaponGlow: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2664,7 +2686,7 @@ export const WildEffectFunctions = {
             }
         }, duration * CONFIG.time.roundTime * 1000); // Convert duration to milliseconds
     },
-    removeSavingThrow: async (actor, spellCast, target) => {
+    removeSavingThrow: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2705,7 +2727,7 @@ export const WildEffectFunctions = {
             await MidiQOL.completeItemUse(spellCast, {}, options);
         }
     },
-    delayCast: async (actor, spellCast, target) => {
+    delayCast: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2741,7 +2763,7 @@ export const WildEffectFunctions = {
             }
         });
     },
-    glowMagic: async (actor, spellCast, target) => {
+    glowMagic: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -2831,7 +2853,7 @@ export const WildEffectFunctions = {
             Hooks.off("createToken", hookId);
         }, duration * 86400 * 1000); // Convert duration to milliseconds
     },
-    personalitySwap: async (actor, spellCast, target) => {
+    personalitySwap: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token and the target's token
         const casterToken = canvas.tokens.get(actor.token.id);
         const targetToken = canvas.tokens.get(target.id);
@@ -2902,7 +2924,7 @@ export const WildEffectFunctions = {
             });
         }, duration * CONFIG.time.roundTime * 1000); // Convert duration to milliseconds
     },
-    targetSizeReduce: async (actor, spellCast, target) => {
+    targetSizeReduce: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -2947,7 +2969,7 @@ export const WildEffectFunctions = {
             });
         }
     },
-    addLightningBolt: async (actor, spellCast, target) => {
+    addLightningBolt: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token and the target's token
         const casterToken = canvas.tokens.get(actor.token.id);
         const targetToken = canvas.tokens.get(target.id);
@@ -2983,7 +3005,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    enlargeTarget: async (actor, spellCast, target) => {
+    enlargeTarget: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3031,7 +3053,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    darkness: async (actor, spellCast, target) => {
+    darkness: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token and the target's token
         const casterToken = canvas.tokens.get(actor.token.id);
         const targetToken = canvas.tokens.get(target.id);
@@ -3067,7 +3089,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    plantGrowth: async (actor, spellCast, target) => {
+    plantGrowth: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -3103,7 +3125,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    destroyMatter: async (actor, spellCast, target) => {
+    destroyMatter: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -3184,7 +3206,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    castFireball: async (actor, spellCast, target) => {
+    castFireball: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token and the target's token
         const casterToken = canvas.tokens.get(actor.token.id);
         const targetToken = canvas.tokens.get(target.id);
@@ -3221,7 +3243,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    targetPetrified: async (actor, spellCast, target) => {
+    targetPetrified: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3268,7 +3290,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    preventSpellSlotConsumption: async (actor, spellCast, target) => {
+    preventSpellSlotConsumption: async (actor, actorToken, spellCast, target) => {
         // Get the spell level of the original spell
         const spellLevel = spellCast.data.data.level;
 
@@ -3288,7 +3310,7 @@ export const WildEffectFunctions = {
         // After casting the spell, revert the spell slots to their original value
         await actor.update({ [`data.spells.spell${spellLevel}.value`]: spellSlots });
     },
-    healTenFeet: async (actor, spellCast, target) => {
+    healTenFeet: async (actor, actorToken, spellCast, target) => {
         // Get the caster's token
         const casterToken = canvas.tokens.get(actor.token.id);
 
@@ -3341,7 +3363,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    dizzy: async (actor, spellCast, target) => {
+    dizzy: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3411,7 +3433,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    wallOfFireTarget: async (actor, spellCast, target) => {
+    wallOfFireTarget: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -3506,7 +3528,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    levitateTarget: async (actor, spellCast, target) => {
+    levitateTarget: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -3561,7 +3583,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    darknessOnTarget: async (actor, spellCast, target) => {
+    darknessOnTarget: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -3596,7 +3618,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    targetIsCharmed: async (actor, spellCast, target) => {
+    targetIsCharmed: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3639,7 +3661,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    consumeTargetSpellSlots: async (actor, spellCast, target) => {
+    consumeTargetSpellSlots: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3683,7 +3705,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    enlargeTargetFeet: async (actor, spellCast, target) => {
+    enlargeTargetFeet: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3729,7 +3751,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    rustMonster: async (actor, spellCast, target) => {
+    rustMonster: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -3782,7 +3804,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    polymorphTarget: async (actor, spellCast, target) => {
+    polymorphTarget: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -3861,7 +3883,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    targetLovesCaster: async (actor, spellCast, target) => {
+    targetLovesCaster: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3904,7 +3926,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    targetSexChange: async (actor, spellCast, target) => {
+    targetSexChange: async (actor, actorToken, spellCast, target) => {
         // Get the target's actor
         const targetActor = target.actor;
 
@@ -3934,7 +3956,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [target] });
     },
-    targetRainCloud: async (actor, spellCast, target) => {
+    targetRainCloud: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -3987,7 +4009,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    targetStinkingCloud: async (actor, spellCast, target) => {
+    targetStinkingCloud: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 
@@ -4032,7 +4054,7 @@ export const WildEffectFunctions = {
         // Cast the original spell as well
         await MidiQOL.completeItemUse(spellCast, {}, { target: [targetToken] });
     },
-    targetHeavyObject: async (actor, spellCast, target) => {
+    targetHeavyObject: async (actor, actorToken, spellCast, target) => {
         // Get the target's token
         const targetToken = canvas.tokens.get(target.id);
 

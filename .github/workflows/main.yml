@@ -20,7 +20,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: yarn
+        run: yarn install
 
       - name: Extract tag version number
         id: get_version

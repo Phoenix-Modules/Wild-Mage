@@ -1,5 +1,5 @@
 export default class WildGem {
-    const gem = {
+    gem = {
         type: "loot",
         data: {
             description: {

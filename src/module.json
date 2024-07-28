@@ -23,21 +23,21 @@
       "label": "Classes",
       "type": "Item",
       "system": "dnd5e",
-      "banner" : "modules/phoenix-modules-wild-mage/images/Module Banner.png"
+      "banner" : "modules/phoenix-modules-wild-mage/assets/images/Module Banner.png"
     },
     {
       "name": "pm-class-features",
       "label": "Class Features",
       "type": "Item",
       "system": "dnd5e",
-      "banner" : "modules/phoenix-modules-wild-mage/images/Module Banner.png"
+      "banner" : "modules/phoenix-modules-wild-mage/assets/images/Module Banner.png"
     },
     {
       "name": "pm-rolltables",
       "label": "RollTables",
       "type": "RollTable",
       "system": "dnd5e",
-      "banner" : "modules/phoenix-modules-wild-mage/images/Module Banner.png"
+      "banner" : "modules/phoenix-modules-wild-mage/assets/images/Module Banner.png"
     }
   ],
   "packFolders": [{
@@ -52,6 +52,10 @@
     "minimum": "11",
     "verified": "12"
   },
+  "styles": [
+    "styles/styles.css"
+  ],
+  "socket": true,
   "url": "#{URL}#",
   "manifest": "#{MANIFEST}#",
   "download": "#{DOWNLOAD}#",

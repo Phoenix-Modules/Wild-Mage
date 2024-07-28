@@ -1,7 +1,9 @@
-﻿import { Services, Constants } from '@phoenix-modules/common-library';
-import {classFeatures, moduleData, rollTableNames} from "../constants/moduleData";
-import {getBaseThreshold, getThresholdScale} from "./settingsService";
+﻿import { ChatMessageService, PhxConst, ActorService, CompendiumService, RollTableService } from '@phoenix-modules/common-library';
+import {CLASS_FEATURES, MODULE_DATA, MODULE_NAME, ROLL_TABLES} from "../constants/moduleData";
+import {getBaseThreshold, getDetailedResults, getThresholdScale} from "./settingsService";
 import {getActorWildIntensity, setActorWildIntensity} from "./actorService";
+import {executeWildEffect} from "./wildEffectService";
+import {createGmMessage, createPlayerMessage} from "./chatMessageHandler";
 
 export async function processWildMagic(chatMessage, messageText, chatData) {
     await processWildSurge(chatMessage);
@@ -18,32 +20,43 @@ export async function checkBendLuck(chatMessage, messageText, chatData) {
 }
 
 async function processWildSurge(chatMessage) {
-    const messageItem = await Services.getItemFromChatMessage(chatMessage);
+    const messageItem = await ChatMessageService.GetChatMessageSpeakerItem(chatMessage);
     if(messageItem === undefined) return;
     //Check if the item used is a spell, if not, we're done here.
-    if(messageItem.type !== Constants.ITEM_TYPE.Spell) return;
+    if(messageItem.type !== PhxConst.ITEM_TYPE.Spell) return;
     
     //Is the spell level > 0?
     if(isNaN(messageItem.system.level) || messageItem.system.level === 0) return;
     
     //Check to see if the caster has the wild surge feat, if not, return
-    const actor = await Services.getActorFromChatMessage(chatMessage);
+    const actor = await ChatMessageService.GetChatMessageSpeakerActor(chatMessage);
     if(!await actorHasWildSurgeFeat(actor)) return;
+    
+    const actorToken = await ChatMessageService.GetChatMessageSpeakerToken(chatMessage);
+    if(!actorToken) {
+        console.error("Speaker does not have a token on the canvas!");
+        return;
+    }
+
+    const targets = ChatMessageService.GetChatMessageSpeakerTargets(chatMessage);
+    
+    //rotate the token to face the target.
+    await window.PhoenixSocketLib[MODULE_NAME].executeAsGM(PhxConst.SOCKET_METHOD_NAMES.ROTATE_TOWARDS_TARGET, actorToken, targets[0]);
     
     //Check if we triggered a wild surge
     const triggerResult = await hasWildSurgeTriggered(actor);
     if(!triggerResult) return;
     
-    await doWildSurge(actor, messageItem);
+    await doWildSurge(actor, actorToken, messageItem, targets);
 }
 
 //Checks if actor has the wild surge
 async function actorHasWildSurgeFeat(actor) {
-    const actorItems = await Services.getItemsFromActorByType(actor, Constants.ITEM_TYPE.Feat);
+    const actorItems = await ActorService.GetItemsFromActorByType(actor, PhxConst.ITEM_TYPE.Feat);
     let hasWildMagic = false;
     if(Array.isArray(actorItems)) {
         actorItems.forEach(x => {
-            if(x.name === classFeatures.WildMagicSurge) {
+            if(x.name === CLASS_FEATURES.WildMagicSurge) {
                 hasWildMagic = true;
             }
         });
@@ -74,20 +87,20 @@ async function hasWildSurgeTriggered(actor) {
 }
 
 //Perform a wild surge!
-async function doWildSurge(actor, spell, target) {
-    // Roll on the wild magic table
-    const surgeRoll = new Roll("1d100");
-    const surgeRollValue = await surgeRoll.roll();
-    const surgeIndex = surgeRollValue.total - 1; // Adjusting for zero-based index
+async function doWildSurge(actor, actorToken, spell, targets) {
     
+    const compFindResult = await CompendiumService.FindInCompendiums(ROLL_TABLES.WildSurgeToM, PhxConst.COMP_TYPES.RollTable, MODULE_DATA.rollTablePack);
+    const compRollTable = compFindResult[0];
     
+    const result = RollTableService.RollWithoutFoundry(compRollTable);
     
-    // const rollTableArray = await Services.findInCompendiums(rollTableNames.WildSurgeToM, Constants.COMPENDIUM_TYPES.RollTable, moduleData.rollTablePack);
-    // const rollTable = rollTableArray[0];
-    // const surgeResult = rollTable.collections.results[surgeIndex];
-    // console.log(surgeResult);
-    ChatMessage.create({
-        speaker: ChatMessage.getSpeaker({ actor }),
-        content: `<h2>Wild Magic Surge</h2><p>Roll: ${surgeIndex}</p>`
-    });
+    console.log(result);
+    
+    //await executeWildEffect(actor, actorToken, spell, targets, result.range[0]);
+    
+    if(!getDetailedResults()) {
+        createGmMessage(actor, result.range[0], result.text);
+    }
+    
+    createPlayerMessage(actor, result.range[0], result.text, result.text);
 }
